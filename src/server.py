@@ -22,6 +22,8 @@ class Client(LineOnlyReceiver):
     ip: str
     login: str = None
 
+
+
     def connectionMade(self):
         """
         Обработчик нового клиента
@@ -38,6 +40,8 @@ class Client(LineOnlyReceiver):
 
         print(f"Client {self.ip} connected")  # отображаем сообщение в консоли сервера
 
+
+
     def connectionLost(self, reason=connectionDone):
         """
         Обработчик закрытия соединения
@@ -45,7 +49,7 @@ class Client(LineOnlyReceiver):
         - удалить из списка клиентов
         - вывести сообщение в чат об отключении
         """
-
+        self.sendLine(f"This login: \"{self.login}\" is already taken!".encode())
         self.factory.clients.remove(self)  # удаляем клиента из списка в фабрике
 
         print(f"Client {self.ip} disconnected")  # выводим уведомление в консоли сервера
@@ -64,9 +68,16 @@ class Client(LineOnlyReceiver):
         if self.login is None:
             if message.startswith("login:"):  # проверяем, чтобы в начале шел login:
                 self.login = message.replace("login:", "")  # вырезаем часть после :
+                for s in self.factory.clients:
+                    if (s != self) and (self.login == s.login):
 
-                notification = f"New user: {self.login}"  # формируем уведомление о новом клиенте
-                self.factory.notify_all_users(notification)  # отсылаем всем в чат
+                        print(f"Someone try to get reserved login {self.login}")
+                        self.transport.loseConnection()
+                        break
+                else:
+                    notification = f"New user: {self.login}"  # формируем уведомление о новом клиенте
+                    self.factory.send_history(self)
+                    self.factory.notify_all_users(notification)  # отсылаем всем в чат
             else:
                 self.sendLine("Invalid login".encode())  # шлем уведомление, если в сообщении ошибка
         # если логин уже есть и это следующее сообщение
@@ -78,10 +89,13 @@ class Client(LineOnlyReceiver):
             print(format_message)
 
 
+
+
 class Server(ServerFactory):
     """Класс для управления сервером"""
 
     clients: list  # список клиентов
+    messages: list
     protocol = Client  # протокол обработки клиента
 
     def __init__(self):
@@ -93,6 +107,7 @@ class Server(ServerFactory):
         """
 
         self.clients = []  # создаем пустой список клиентов
+        self.messages = []
 
         print("Server started - OK")  # уведомление в консоль сервера
 
@@ -109,9 +124,22 @@ class Server(ServerFactory):
 
         data = message.encode()  # закодируем текст в двоичное представление
 
+        if len(self.messages) > 10:
+            del self.messages[0]
+        self.messages.append(data)
+
         # отправим всем подключенным клиентам
         for user in self.clients:
             user.sendLine(data)
+
+    def send_history(self, client):
+        """Отправлять пользователю последние 10 сообщений из чата"""
+
+        for number_message in range(0, len(self.messages)):
+            client.sendLine(self.messages[number_message])
+
+
+
 
 
 if __name__ == '__main__':
